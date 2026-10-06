@@ -45,12 +45,13 @@ services:
     build:
       context: .
       target: development
-    command: npm run dev --workspace @rfp-monster/web
+    # Same port inside and out, so the URL Vite prints is the one that works on the host.
+    command: npm run dev --workspace @rfp-monster/web -- --port ${FRONTEND_PORT:-5174} --strictPort
     depends_on:
       api:
         condition: service_healthy
     ports:
-      - "${FRONTEND_PORT:-5174}:5173"
+      - "${FRONTEND_PORT:-5174}:${FRONTEND_PORT:-5174}"
 
   playwright:
     build:
