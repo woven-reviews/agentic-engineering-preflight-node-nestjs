@@ -1,0 +1,66 @@
+name: preflight-node-nestjs
+
+# Dockerfile, package.json files and package-lock.json are byte-identical copies of
+# the assessment's, so the image layers built here (apt-get, `npm ci`, and the
+# Playwright browser install) are reused as-is when the assessment stack builds.
+# `playwright` and `extractor` exist only to warm those builds; they exit right away.
+services:
+  postgres:
+    image: postgres:17.8-bookworm
+    environment:
+      POSTGRES_DB: preflight
+      POSTGRES_USER: preflight
+      POSTGRES_PASSWORD: preflight
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U preflight -d preflight"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      target: development
+    command: sh -c "npm run migration:run --workspace @rfp-monster/api && npm run start:dev --workspace @rfp-monster/api"
+    environment:
+      DATABASE_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://localhost:3000/api/v1/health'').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"',
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    ports:
+      - "${API_PORT:-3100}:3000"
+
+  web:
+    build:
+      context: .
+      target: development
+    command: npm run dev --workspace @rfp-monster/web
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-5174}:5173"
+
+  playwright:
+    build:
+      context: .
+      target: e2e
+    command: npx playwright --version
+
+  extractor:
+    build: ./scripts
+    command: ["extract_claude_session_log.py", "--help"]
+
+volumes:
+  postgres-data:
